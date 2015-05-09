@@ -10,7 +10,7 @@ local coups  = { 1, 2, 3 }
 local nolinks = true
 
 
-local childs = {}
+local children = {}
 
 local function add_node(piles, coups, parent, p)
 
@@ -22,7 +22,7 @@ local function add_node(piles, coups, parent, p)
 	end
 
 	local tree = {}
-	local tmpchilds = {}
+	local tmpchildren = {}
 
 	for k,v in ipairs(piles) do
 		for i,j in ipairs(coups) do
@@ -42,20 +42,20 @@ local function add_node(piles, coups, parent, p)
 
 				local name = table.concat(tmppiles, " ")
 
-				if not tmpchilds[name] then
-					tmpchilds[name] = true
+				if not tmpchildren[name] then
+					tmpchildren[name] = true
 
 					local color
 					local tbl
-					if not childs[name] then
+					if not children[name] then
 						tbl, color = add_node(tmppiles, coups, child, p)
 						table.insert(tree, {name = tmppiles, content = tbl, color = color, p = p} )
 
-						childs[name] = { name = c, content = tbl, color = color, p = p }
+						children[name] = { name = c, content = tbl, color = color, p = p }
 					else
-						tbl = childs[name]
-						local ccolor = childs[name].color
-						local tp = childs[name].p
+						tbl = children[name]
+						local ccolor = children[name].color
+						local tp = children[name].p
 
 						if p == tp then
 							color = ccolor
@@ -73,7 +73,7 @@ local function add_node(piles, coups, parent, p)
 	return tree, retcolor
 end
 
-local childs = {}
+local children = {}
 
 n=0
 
