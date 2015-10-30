@@ -18,9 +18,19 @@ GRUB_ID="BOOT"
 GRUB_BIN="grub-install"
 
 WRITE_ISO="y"
-ISO_PATH="/home/piernov/Téléchargements/ubuntu-15.04-desktop-amd64.iso"
+ISO_PATH="/home/piernov/Téléchargements/ubuntu-15.10-desktop-amd64.iso"
 SYSTEM_PART="2"
 SYSTEM_FS="none"
+
+WRITE_DATA="y"
+DATA_PATH="/home/piernov/Téléchargements/ubuntu-data.tar.xz" # tar archive
+DATA_PART="3"
+DATA_FS="ext4"
+CONF_DATA="y"
+
+if [ -z "$DATA_HOSTNAME" ]; then
+	DATA_HOSTNAME="jm2l-${RANDOM}"
+fi
 
 MOUNTDIR=/mnt
 
@@ -100,6 +110,8 @@ function cleanup_and_exit {
 	cleanup
 	if [ $1 -eq 0 ]; then
 		einfo "Success!"
+	else
+		eerror "Failure!"
 	fi
 	exit $1
 }
@@ -138,6 +150,8 @@ EOF
 	if [ $? -ne 0 ]; then
 		exit 9
 	fi
+        einfo "Synchronizing caches"
+        pexec sync
 }
 
 function make_filesystems {
@@ -174,7 +188,9 @@ function make_filesystems {
 			exit 10
 		fi
 	done
-	einfo "Creating filesystem"
+	einfo "Created filesystems"
+        einfo "Synchronizing caches"
+        pexec sync
 }
 
 function mount_partitions {
@@ -408,36 +424,137 @@ function write_iso {
 		cleanup_and_exit 19
 	fi
 
+	einfo "Synchronizing caches"
+	pexec sync
+
 	einfo "Installing ISO in partition ${device}$SYSTEM_PART."
 	PV_BIN=$(which pv 2>/dev/null)
 	if [ $? -eq 0 ]; then
-		pexec ${PV_BIN} "${ISO_PATH}" | dd of="${device}${SYSTEM_PART}"
-		if [ $? -ne 0 ]; then cleanup_and_exit 20; fi
-		if [ ${PIPESTATUS[0]} -ne 0 ]; then cleanup_and_exit 21; fi
-		
+		pexec "${PV_BIN} \"${ISO_PATH}\" | dd of=\"${device}${SYSTEM_PART}\" bs=16M"
+		if [ ${PIPESTATUS[0]} -ne 0 ]; then cleanup_and_exit 20; fi
+		if [ $? -ne 0 ]; then cleanup_and_exit 21; fi
 	else
 		pexec dd if="${ISO_PATH}" of="${device}${SYSTEM_PART}"
 		if [ $? -ne 0 ]; then cleanup_and_exit 22; fi
 	fi
 
+	einfo "Synchronizing caches"
+	pexec sync
+
         einfo "ISO installed successfully."
+}
+
+function guess_data_part {
+	local device
+	device="$1"
+
+	if [ -z "$DATA_FS"]; then DATA_FS="ext4"; fi
+
+	GRUB_PART=$(guess_part "$device" "$DATA_FS")
+
+	if [ $? -ne 0 ]; then
+		eerror "Couldn't find any suitable partition on device ${device}."
+		echo "       Either set the $$DATA_PART variable to the correct partition,"
+		echo "       or create add an ext4 partition to the partition table,"
+		echo "       or disable DATA installation."
+		cleanup_and_exit 23
+	else
+		einfo "Using ${DATA_FS} partition ${device}${DATA_PART} as DATA partition"
+	fi
+}
+
+function write_data {
+	local device
+	device="$1"
+
+        if [ "${WRITE_DATA}" != "y" ]; then
+                ewarn "DATA installation disabled."
+                return
+        fi
+
+        if [ -z "$DATA_PART" ]; then
+                ewarn "No DATA destination partition specified, will use the first mounted ext4 partition available on the device."
+                guess_data_part "$device"
+        fi
+
+	mountpoint=$(grep "${device}${DATA_PART}" /proc/mounts | cut -d' ' -f2)
+
+	einfo "Installing DATA in partition ${device}$DATA_PART."
+	PV_BIN=$(which pv 2>/dev/null)
+	if [ $? -eq 0 ]; then
+		pexec "${PV_BIN} \"${DATA_PATH}\" | tar xJ -C \"${mountpoint}\""
+		if [ ${PIPESTATUS[0]} -ne 0 ]; then cleanup_and_exit 24; fi
+		if [ $? -ne 0 ]; then cleanup_and_exit 25; fi
+	else
+		pexec tar xf ${DATA_PATH} -C ${mountpoint}
+		if [ $? -ne 0 ]; then cleanup_and_exit 26; fi
+	fi
+
+	einfo "Synchronizing caches"
+	pexec sync
+
+        einfo "DATA installed successfully."
+}
+
+function change_hostname {
+	local device
+	local mp
+	device="$1"
+	mp="$2"
+
+	if [ -z "$DATA_HOSTNAME" ]; then
+		DATA_HOSTNAME="ubuntu-$(date +%d-%m-%y_%H-%M)"
+		ewarn "No hostname specified, using $DATA_HOSTNAME"
+	fi
+	einfo "Changing hostname to $DATA_HOSTNAME"
+	echo "$DATA_HOSTNAME" > ${mp}/upper/etc/hostname
+	sed "s|ubuntu|${DATA_HOSTNAME}|g" -i ${mp}/upper/etc/hosts
+}
+
+function configure_data {
+	local device
+	device="$1"
+
+	if [ "${CONF_DATA}" != "y" ]; then
+		ewarn "DATA configuration disabled."
+		return
+	fi
+
+        if [ -z "$DATA_PART" ]; then
+                ewarn "No DATA destination partition specified, will use the first mounted ext4 partition available on the device."
+                guess_data_part "$device"
+        fi
+
+        mountpoint=$(grep "${device}${DATA_PART}" /proc/mounts | cut -d' ' -f2)
+
+        einfo "Configuring DATA in partition ${device}$DATA_PART."
+	change_hostname "$device" "$mountpoint"
+
+	einfo "Synchronizing caches"
+	pexec sync
+
+	einfo "Configuration done"
 }
 
 function make_usb {
 	local device
 	device=$1
 
-#	wipe_parttable "$device"
+	wipe_parttable "$device"
 
-#	write_parttable "$device"
+	write_parttable "$device"
 
-#	make_filesystems "$device"
+	make_filesystems "$device"
 
 	mount_partitions "$device"
 
 	setup_grub "$device"
 
 	write_iso "$device"
+
+	write_data "$device"
+
+	configure_data "$device"
 
 	cleanup_and_exit 0
 }
@@ -515,6 +632,38 @@ if [ "$WRITE_ISO" == "y" ]; then
 	else
 	        einfo "$ISO_PATH is readable."
 	fi
+fi
+
+## DATA check ##
+
+if [ "$WRITE_DATA" == "y" ]; then
+        # Specified
+
+        if [ -z "$DATA_PATH" ]; then
+                eerror "You must set the DATA_PATH variable."
+                exit 55
+        fi
+
+        # File type
+
+        if [ -f "$DATA_PATH" ]; then
+                einfo "$DATA_PATH is a regular file."
+        elif [ ! -e "$DATA_PATH" ]; then
+                eerror "$DATA_PATH not found."
+                exit 56
+        else
+                eerror "$DATA_PATH is not a regular file."
+                exit 57
+        fi
+
+        # Permissions
+
+        if [ ! -r "$DATA_PATH" ]; then
+                eerror "$DATA_PATH is not readable."
+                exit 58
+        else
+                einfo "$DATA_PATH is readable."
+        fi
 fi
 		
 
