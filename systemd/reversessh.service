@@ -1,0 +1,13 @@
+[Unit]
+Description=AutoSSH service for port 2222
+After=network.target
+
+[Service]
+User=reversessh
+TimeoutStopSec=1
+Environment="AUTOSSH_GATETIME=0"
+ExecStart=/usr/bin/autossh -M 10984 -NR 2222:0.0.0.0:22 -o TCPKeepAlive=yes servers.piernov.org
+
+[Install]
+WantedBy=multi-user.target
+
