@@ -1,0 +1,2 @@
+ACTION=="add", SUBSYSTEM=="usb", ATTR{product}=="*", ATTR{power/control}="on"
+

@@ -1,0 +1,2 @@
+KERNEL=="card0", SUBSYSTEM=="drm", ENV{DISPLAY}=":0", ENV{XAUTHORITY}="/var/lib/lightdm/.Xauthority", RUN+="/opt/monitor_hotplug.sh"
+
