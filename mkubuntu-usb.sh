@@ -302,13 +302,19 @@ function setup_grub_uefi {
 	if [ -z "$GRUB_ID" ]; then GRUB_ID="boot"; fi
 
 	einfo "Installing GRUB in mount point ${mountpoint}, with UEFI bootloader in ${mountpoint}/EFI/${GRUB_ID}."
+	pexec "${GRUB_BIN}" --no-floppy --target=i386-efi --root-directory="${mountpoint}" --efi-directory="${mountpoint}" --bootloader-id="${GRUB_ID}" --no-nvram --recheck
+
 	pexec "${GRUB_BIN}" --no-floppy --target=x86_64-efi --root-directory="${mountpoint}" --efi-directory="${mountpoint}" --bootloader-id="${GRUB_ID}" --no-nvram --recheck
+
 	if [ $? -ne 0 ]; then
 		cleanup_and_exit 15
 	fi
 
 	einfo "Copying grubx64.efi to bootx64.efi"
 	pexec cp "${mountpoint}/EFI/${GRUB_ID}/grubx64.efi" "${mountpoint}/EFI/${GRUB_ID}/bootx64.efi"
+
+	pexec cp "${mountpoint}/EFI/${GRUB_ID}/grubia32.efi" "${mountpoint}/EFI/${GRUB_ID}/bootia32.efi"
+
 	if [ $? -ne 0 ]; then
 		cleanup_and_exit 16
 	fi
@@ -321,8 +327,8 @@ function setup_grub_config {
 	mountpoint="$1"
 
 	einfo "Writing GRUB configuration file to ${mountpoint}/boot/grub/grub.cfg"
-	pexec cat > ${mountpoint}/boot/grub/grub.cfg <<EOF
-if loadfont /boot/grub/unicode.pf2 ; then
+	pexec cat \> ${mountpoint}/boot/grub/grub.cfg <<EOF
+if loadfont /boot/grub/fonts/unicode.pf2 ; then
 	set gfxmode=auto
 	insmod efi_gop
 	insmod efi_uga
